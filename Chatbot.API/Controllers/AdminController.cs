@@ -12,11 +12,15 @@ namespace Chatbot.API.Controllers
     {
         private readonly IScraperService _scraperService;
         private readonly IRetrievalService _retrievalService;
+        private readonly IEmbeddingService _embeddingService;
+        private readonly IConfiguration _configuration;
 
-        public AdminController(IScraperService scraperService, IRetrievalService retrievalService)
+        public AdminController(IScraperService scraperService, IRetrievalService retrievalService, IEmbeddingService embeddingService, IConfiguration configuration)
         {
             _scraperService = scraperService;
             _retrievalService = retrievalService;
+            _embeddingService = embeddingService;
+            _configuration = configuration;
         }
 
         [HttpPost("scrape-all")]
@@ -57,6 +61,25 @@ namespace Chatbot.API.Controllers
                     ContentPreview = d.Content.Substring(0, Math.Min(100, d.Content.Length))
                 })
             });
+        }
+
+        [HttpGet("test-embedding")]
+        public async Task<IActionResult> TestEmbedding()
+        {
+            var embedding = await _embeddingService.GetEmbeddingAsync("What is UBA?");
+            if (embedding.Length == 0)
+                return BadRequest("Embedding failed");
+            return Ok($"Embedding successful - {embedding.Length} dimensions");
+        }
+
+        [HttpGet("list-models")]
+        public async Task<IActionResult> ListModels()
+        {
+            using var client = new HttpClient();
+            var apiKey = _configuration["GeminiSettings:ApiKey"];
+            var response = await client.GetStringAsync(
+                $"https://generativelanguage.googleapis.com/v1beta/models?key={apiKey}");
+            return Ok(response);
         }
 
 

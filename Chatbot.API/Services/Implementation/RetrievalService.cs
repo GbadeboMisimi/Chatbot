@@ -10,7 +10,7 @@ namespace Chatbot.API.Services.Implementation
         private readonly IChatDocumentRepository _documentRepository;
         private readonly IEmbeddingService _embeddingService;
         private readonly ILogger<RetrievalService> _logger;
-
+ 
         public RetrievalService(
             IChatDocumentRepository documentRepository,
             IEmbeddingService embeddingService,
@@ -21,7 +21,7 @@ namespace Chatbot.API.Services.Implementation
             _logger = logger;
         }
 
-        public async Task<IEnumerable<ChatDocument>> GetRelevantDocumentsAsync(string query, int topK = 5)
+        public async Task<IEnumerable<ChatDocument>> GetRelevantDocumentsAsync(string query, int topK = 10)
         {
             // Generate embedding for the query
             var queryEmbedding = await _embeddingService.GetEmbeddingAsync(query);
@@ -33,7 +33,8 @@ namespace Chatbot.API.Services.Implementation
                 return await FallbackKeywordSearch(query, topK);
             }
 
-            var allDocuments = await _documentRepository.GetAllAsync();
+            //var allDocuments = await _documentRepository.GetAllAsync();
+            var allDocuments = await _documentRepository.GetAllWithEmbeddingsAsync();
 
             // Score each document by cosine similarity
             var scoredDocuments = allDocuments
@@ -56,6 +57,28 @@ namespace Chatbot.API.Services.Implementation
             return scoredDocuments;
         }
 
+        //public async Task<string> BuildContextAsync(string query)
+        //{
+        //    var documents = await GetRelevantDocumentsAsync(query);
+
+        //    if (!documents.Any())
+        //        return string.Empty;
+
+        //    var context = new System.Text.StringBuilder();
+
+        //    foreach (var doc in documents)
+        //    {
+        //        context.AppendLine($"[{doc.Topic}]");
+        //        context.AppendLine(doc.Content);
+        //        context.AppendLine();
+        //    }
+
+        //    return context.ToString().Trim();
+        //}
+
+
+
+
         public async Task<string> BuildContextAsync(string query)
         {
             var documents = await GetRelevantDocumentsAsync(query);
@@ -64,9 +87,15 @@ namespace Chatbot.API.Services.Implementation
                 return string.Empty;
 
             var context = new System.Text.StringBuilder();
+            var seenContent = new HashSet<string>();
 
             foreach (var doc in documents)
             {
+                // Skip duplicate content
+                if (seenContent.Contains(doc.Content))
+                    continue;
+
+                seenContent.Add(doc.Content);
                 context.AppendLine($"[{doc.Topic}]");
                 context.AppendLine(doc.Content);
                 context.AppendLine();
@@ -75,7 +104,9 @@ namespace Chatbot.API.Services.Implementation
             return context.ToString().Trim();
         }
 
-        public async Task<IEnumerable<ChatDocument>> GetByCategoryAsync(string category, int topK = 3)
+
+
+        public async Task<IEnumerable<ChatDocument>> GetByCategoryAsync(string category, int topK = 5)
         {
             var documents = await _documentRepository.GetByCategoryAsync(category);
             return documents.Take(topK).ToList();
@@ -83,7 +114,7 @@ namespace Chatbot.API.Services.Implementation
 
         public async Task<bool> HasRelevantDocumentsAsync(string query)
         {
-            var documents = await GetRelevantDocumentsAsync(query, topK: 1);
+            var documents = await GetRelevantDocumentsAsync(query, topK: 3);
             return documents.Any();
         }
 

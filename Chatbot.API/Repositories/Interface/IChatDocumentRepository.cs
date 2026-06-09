@@ -5,6 +5,7 @@ namespace Chatbot.API.Repositories.Interface
     public interface IChatDocumentRepository
     {
         Task<IEnumerable<ChatDocument>> GetAllAsync();
+        Task<IEnumerable<ChatDocument>> GetAllWithEmbeddingsAsync();
         Task<IEnumerable<ChatDocument>> GetByCategoryAsync(string category);
         Task<IEnumerable<ChatDocument>> SearchAsync(string query);
         Task<DateTime?> GetLastScrapedDateAsync();

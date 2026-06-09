@@ -18,12 +18,6 @@ try
     builder.Services.AddControllers();
     // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
     builder.Services.AddEndpointsApiExplorer();
-
-
-
-
-
-
     builder.Services.AddSwaggerGen(options =>
     {
         options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
@@ -52,18 +46,14 @@ try
         });
     });
 
-
-
-
-
-
-
-
-
+    //builder.Services.AddDbContext<AppDbContext>(options =>
+    //    options.UseSqlServer(
+    //        builder.Configuration.GetConnectionString("DefaultConnection")));
 
     builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseSqlServer(
-            builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlOptions => sqlOptions.CommandTimeout(600)));
 
     builder.Services.AddHttpClient();
 

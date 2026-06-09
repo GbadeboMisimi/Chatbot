@@ -16,6 +16,22 @@ namespace Chatbot.API.Repositories.Implementation
 
         public async Task<IEnumerable<ChatDocument>> GetAllAsync()
         {
+            return await _context.ChatDocuments
+                .Select(d => new ChatDocument
+                {
+                    Id = d.Id,
+                    Url = d.Url,
+                    Topic = d.Topic,
+                    Category = d.Category,
+                    Content = d.Content,
+                    LastScraped = d.LastScraped
+                    // deliberately exclude Embedding
+                })
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<ChatDocument>> GetAllWithEmbeddingsAsync()
+        {
             return await _context.ChatDocuments.ToListAsync();
         }
 

@@ -12,6 +12,15 @@ public class AppDbContext : DbContext
         public DbSet<ChatHistory> ChatHistories => Set<ChatHistory>();
         public DbSet<ChatDocument> ChatDocuments => Set<ChatDocument>();
 
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            if (!optionsBuilder.IsConfigured)
+            {
+                optionsBuilder.UseSqlServer(options =>
+                    options.CommandTimeout(500));
+            }
+        }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

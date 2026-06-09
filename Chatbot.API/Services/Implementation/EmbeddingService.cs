@@ -24,13 +24,13 @@ namespace Chatbot.API.Services.Implementation
 
         public async Task<float[]> GetEmbeddingAsync(string text)
         {
-            try
+            try 
             {
-                var url = $"https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key={_apiKey}";
+                var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={_apiKey}";
 
                 var body = new
                 {
-                    model = "models/embedding-001",
+                    model = "models/gemini-embedding-001",
                     content = new
                     {
                         parts = new[]
@@ -39,7 +39,6 @@ namespace Chatbot.API.Services.Implementation
                         }
                     }
                 };
-
                 var content = new StringContent(
                     JsonConvert.SerializeObject(body),
                     Encoding.UTF8,
@@ -47,6 +46,8 @@ namespace Chatbot.API.Services.Implementation
 
                 var response = await _httpClient.PostAsync(url, content);
                 var result = await response.Content.ReadAsStringAsync();
+
+                _logger.LogInformation("Embedding API response: {Result}", result);
 
                 dynamic json = JsonConvert.DeserializeObject(result)!;
                 var valuesArray = json.embedding.values;
