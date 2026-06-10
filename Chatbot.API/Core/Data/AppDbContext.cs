@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
         public DbSet<User> Users => Set<User>();
         public DbSet<ChatHistory> ChatHistories => Set<ChatHistory>();
         public DbSet<ChatDocument> ChatDocuments => Set<ChatDocument>();
+        public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -63,6 +64,24 @@ public class AppDbContext : DbContext
                 entity.Property(e => e.LastScraped).IsRequired();
 
                 entity.HasIndex(e => e.Category);
+            });
+
+            modelBuilder.Entity<ChatSession>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.SessionId).IsRequired();
+                entity.Property(e => e.Title).IsRequired().HasMaxLength(200);
+                entity.Property(e => e.CreatedAt).IsRequired();
+
+                entity.HasIndex(e => e.SessionId).IsUnique();
+
+                entity.HasOne(e => e.User)
+                      .WithMany(u => u.ChatSessions)
+                      .HasForeignKey(e => e.UserId);
+
+                entity.HasMany(e => e.ChatHistories)
+                      .WithOne(c => c.ChatSession)
+                      .HasForeignKey(c => c.ChatSessionId);
             });
         }
     }

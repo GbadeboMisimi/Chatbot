@@ -16,17 +16,20 @@ namespace Chatbot.API.Controllers
         private readonly IAiService _aiService;
         private readonly IRetrievalService _retrievalService;
         private readonly IChatHistoryRepository _chatHistoryRepository;
+        private readonly IChatSessionRepository _sessionRepository;
         private readonly ILogger<ChatController> _logger;
 
         public ChatController(
             IAiService aiService,
             IRetrievalService retrievalService,
             IChatHistoryRepository chatHistoryRepository,
+            IChatSessionRepository sessionRepository,
             ILogger<ChatController> logger)
         {
             _aiService = aiService;
             _retrievalService = retrievalService;
             _chatHistoryRepository = chatHistoryRepository;
+            _sessionRepository = sessionRepository;
             _logger = logger;
         }
 
@@ -34,6 +37,28 @@ namespace Chatbot.API.Controllers
         public async Task<IActionResult> Chat([FromBody] ChatRequestDto request)
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+            var session = await _sessionRepository.GetBySessionIdAsync(request.SessionId);
+            if (session == null)
+            {
+                session = new ChatSession
+                {
+                    SessionId = request.SessionId,
+                    Title = request.Message.Length > 50
+                        ? request.Message.Substring(0, 50) + "..."
+                        : request.Message,
+                    UserId = userId,
+                    CreatedAt = DateTime.UtcNow,
+                    LastMessageAt = DateTime.UtcNow
+                };
+                await _sessionRepository.AddAsync(session);
+            }
+            else
+            {
+                session.LastMessageAt = DateTime.UtcNow;
+                await _sessionRepository.UpdateAsync(session);
+            }
+            await _sessionRepository.SaveChangesAsync();
 
             // Save user message
             await _chatHistoryRepository.AddAsync(new ChatHistory

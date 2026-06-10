@@ -1,4 +1,5 @@
-﻿using Chatbot.API.Core.Models;
+﻿using Chatbot.API.Core.DTOs;
+using Chatbot.API.Core.Models;
 using Chatbot.API.Repositories.Interface;
 using Chatbot.API.Services.Interface;
 using Newtonsoft.Json;
@@ -104,7 +105,43 @@ namespace Chatbot.API.Services.Implementation
             return context.ToString().Trim();
         }
 
+        public async Task<(string Context, List<CitationDto> Citations)> BuildContextWithCitationsAsync(string query)
+        {
+            var documents = await GetRelevantDocumentsAsync(query);
 
+            if (!documents.Any())
+                return (string.Empty, new List<CitationDto>());
+
+            var context = new System.Text.StringBuilder();
+            var seenContent = new HashSet<string>();
+            var seenUrls = new HashSet<string>();
+            var citations = new List<CitationDto>();
+
+            foreach (var doc in documents)
+            {
+                if (seenContent.Contains(doc.Content))
+                    continue;
+
+                seenContent.Add(doc.Content);
+                context.AppendLine($"[{doc.Topic}]");
+                context.AppendLine(doc.Content);
+                context.AppendLine();
+
+                // Add citation only once per URL
+                if (!seenUrls.Contains(doc.Url))
+                {
+                    seenUrls.Add(doc.Url);
+                    citations.Add(new CitationDto
+                    {
+                        Topic = doc.Topic,
+                        Url = doc.Url,
+                        Category = doc.Category
+                    });
+                }
+            }
+
+            return (context.ToString().Trim(), citations);
+        }
 
         public async Task<IEnumerable<ChatDocument>> GetByCategoryAsync(string category, int topK = 5)
         {

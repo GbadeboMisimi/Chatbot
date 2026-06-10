@@ -10,6 +10,7 @@
         public DateTime CreatedAt { get; set; }
 
         public ICollection<ChatHistory> ChatHistories { get; set; }
+        public ICollection<ChatSession> ChatSessions { get; set; }
 
     }
 }

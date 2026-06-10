@@ -60,6 +60,7 @@ try
     builder.Services.AddScoped<IUserRepository, UserRepository>();
     builder.Services.AddScoped<IChatHistoryRepository, ChatHistoryRepository>();
     builder.Services.AddScoped<IChatDocumentRepository, ChatDocumentRepository>();
+    builder.Services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
 
     var jwtSettings = builder.Configuration.GetSection("JwtSettings");
     builder.Services.AddAuthentication(options =>

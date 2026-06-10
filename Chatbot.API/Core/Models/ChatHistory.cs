@@ -10,5 +10,8 @@
 
         public int UserId { get; set; }
         public User User { get; set; }
+
+        public int? ChatSessionId { get; set; }
+        public ChatSession? ChatSession { get; set; }
     }
 }
