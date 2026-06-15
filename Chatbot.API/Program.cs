@@ -63,6 +63,11 @@ try
     builder.Services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
 
     var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+    var jwtSecretKey = jwtSettings["SecretKey"];
+    if (string.IsNullOrWhiteSpace(jwtSecretKey) || jwtSecretKey.Length < 32)
+    {
+        throw new InvalidOperationException("JwtSettings:SecretKey must be configured and at least 32 characters long.");
+    }
     builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -79,8 +84,10 @@ try
             ValidateIssuerSigningKey = true,
             ValidIssuer = jwtSettings["Issuer"],
             ValidAudience = jwtSettings["Audience"],
+            NameClaimType = System.Security.Claims.ClaimTypes.Name,
+            RoleClaimType = System.Security.Claims.ClaimTypes.Role,
             IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(jwtSettings["SecretKey"]))
+                Encoding.UTF8.GetBytes(jwtSecretKey))
         };
     });
     builder.Services.AddAuthorization();
@@ -91,6 +98,7 @@ try
     builder.Services.AddScoped<IRetrievalService, RetrievalService>();
     builder.Services.AddScoped<IAiService, AiService>();
     builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
+    builder.Services.AddScoped<IWebSearchService, WebSearchService>();
     builder.Services.AddScoped<ISessionService, SessionService>();
     builder.Services.AddScoped<IChatService, ChatService>();
 
@@ -116,7 +124,9 @@ try
     {
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        if (!context.Users.Any(u => u.Role == "admin"))
+        await context.Database.MigrateAsync();
+
+        if (!context.Users.Any(u => u.Role.ToLower() == "admin"))
         {
             context.Users.Add(new User
             {
@@ -138,5 +148,5 @@ catch (Exception ex)
     Console.WriteLine($"STARTUP ERROR: {ex.Message}");
     Console.WriteLine($"INNER: {ex.InnerException?.Message}");
     Console.WriteLine($"STACK: {ex.StackTrace}");
-    Console.ReadLine();
+    Environment.ExitCode = 1;
 }

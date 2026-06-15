@@ -31,7 +31,7 @@ namespace Chatbot.API.Services.Implementation
         public async Task<string> GetResponseAsync(string question, string context)
         {
             var prompt = BuildPrompt(question, context);
-            return await CallGeminiAsync(prompt);
+            return await CallOllamaAsync(prompt);
         }
 
         public async Task<string> GetResponseWithHistoryAsync(
@@ -40,7 +40,7 @@ namespace Chatbot.API.Services.Implementation
             List<(string Role, string Message)> history)
         {
             var prompt = BuildPromptWithHistory(question, context, history);
-            return await CallGeminiAsync(prompt);
+            return await CallOllamaAsync(prompt);
         }
 
         public async Task<bool> IsAvailableAsync()
@@ -48,7 +48,7 @@ namespace Chatbot.API.Services.Implementation
             try
             {
                 var testPrompt = "Say hello";
-                var result = await CallGeminiAsync(testPrompt);
+                var result = await CallOllamaAsync(testPrompt);
                 return !string.IsNullOrEmpty(result);
             }
             catch
@@ -70,7 +70,34 @@ keeping all important facts and details:
 
 Summary:";
 
-            return await CallGeminiAsync(prompt);
+            return await CallOllamaAsync(prompt);
+        }
+
+        public async Task<string> CorrectSpellingAsync(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return text;
+
+            try
+            {
+                var prompt = $@"
+Fix spelling and obvious typing mistakes in this user question.
+Return ONLY the corrected question. Do not answer it. Do not add explanation.
+Preserve the user's meaning.
+
+Question:
+{text}
+
+Corrected question:";
+
+                var result = await CallOllamaAsync(prompt);
+                var corrected = string.IsNullOrWhiteSpace(result) ? text : result.Trim().Trim('"');
+                return ApplyUbaCorrections(corrected);
+            }
+            catch
+            {
+                return ApplyUbaCorrections(text);
+            }
         }
 
         public string GetFallbackResponse()
@@ -266,7 +293,7 @@ Summary:";
 
 
 
-        private async Task<string> CallGeminiAsync(string prompt)//ollama
+        private async Task<string> CallOllamaAsync(string prompt)
         {
             try
             {
@@ -293,6 +320,32 @@ Summary:";
                 _logger.LogError(ex, "Ollama API call failed");
                 return GetFallbackResponse();
             }
+        }
+
+        private static string ApplyUbaCorrections(string text)
+        {
+            var corrections = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["elumely"] = "Elumelu",
+                ["elumele"] = "Elumelu",
+                ["tony elumely"] = "Tony Elumelu",
+                ["foundaton"] = "Foundation",
+                ["educaton"] = "education",
+                ["histry"] = "history",
+                ["incorparated"] = "incorporated",
+                ["incorprated"] = "incorporated"
+            };
+
+            foreach (var (wrong, right) in corrections)
+            {
+                text = System.Text.RegularExpressions.Regex.Replace(
+                    text,
+                    $"\\b{System.Text.RegularExpressions.Regex.Escape(wrong)}\\b",
+                    right,
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            }
+
+            return text;
         }
 
 

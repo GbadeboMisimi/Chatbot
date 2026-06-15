@@ -23,13 +23,14 @@ namespace Chatbot.API.Services.Implementation
 
         public async Task<ServiceResponseDto> RegisterAsync(RegisterDto dto)
         {
-            if (string.IsNullOrWhiteSpace(dto.Email) ||
+            if (string.IsNullOrWhiteSpace(dto.FullName) ||
+                string.IsNullOrWhiteSpace(dto.Email) ||
                 string.IsNullOrWhiteSpace(dto.Password))
             {
                 return new ServiceResponseDto
                 {
                     Success = false,
-                    Message = "Email and password are required"
+                    Message = "Full name, email and password are required"
                 };
             }
 
@@ -65,10 +66,10 @@ namespace Chatbot.API.Services.Implementation
 
             var user = new User
             {
-                FullName = dto.FullName,
-                Email = dto.Email,
+                FullName = dto.FullName.Trim(),
+                Email = dto.Email.Trim(),
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-                Role = "User",
+                Role = "user",
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -189,8 +190,15 @@ namespace Chatbot.API.Services.Implementation
             var secretKey =_configuration["JwtSettings:SecretKey"];
             var expiryHours =_configuration.GetValue<int>("JwtSettings:ExpiryInHours");
 
+            if (string.IsNullOrWhiteSpace(issuer) ||
+                string.IsNullOrWhiteSpace(audience) ||
+                string.IsNullOrWhiteSpace(secretKey) ||
+                secretKey.Length < 32 ||
+                expiryHours <= 0)
+                throw new InvalidOperationException("JWT settings are not configured correctly.");
+
             var key =
-                Encoding.UTF8.GetBytes(secretKey!);
+                Encoding.UTF8.GetBytes(secretKey);
 
             var tokenHandler =
                 new JwtSecurityTokenHandler();
@@ -202,12 +210,11 @@ namespace Chatbot.API.Services.Implementation
                     new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, user.Id.ToString()),
                     new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, user.FullName),
                     new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Email, user.Email),
-                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, user.Role)
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, user.Role.ToLowerInvariant())
                 }),
                 Issuer = _configuration["JwtSettings:Issuer"],
                 Audience = _configuration["JwtSettings:Audience"],
-                Expires = DateTime.UtcNow.AddHours(
-                                    int.Parse(_configuration["JwtSettings:ExpiryInHours"]!)),
+                Expires = DateTime.UtcNow.AddHours(expiryHours),
                 SigningCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
                                     new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(key),
                                     Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256Signature)

@@ -11,6 +11,7 @@ namespace Chatbot.API.Services.Implementation
         private readonly IRetrievalService _retrievalService;
         private readonly IChatHistoryRepository _chatHistoryRepository;
         private readonly IChatSessionRepository _sessionRepository;
+        private readonly IWebSearchService _webSearchService;
         private readonly ILogger<ChatService> _logger;
 
         public ChatService(
@@ -18,17 +19,21 @@ namespace Chatbot.API.Services.Implementation
             IRetrievalService retrievalService,
             IChatHistoryRepository chatHistoryRepository,
             IChatSessionRepository sessionRepository,
+            IWebSearchService webSearchService,
             ILogger<ChatService> logger)
         {
             _aiService = aiService;
             _retrievalService = retrievalService;
             _chatHistoryRepository = chatHistoryRepository;
             _sessionRepository = sessionRepository;
+            _webSearchService = webSearchService;
             _logger = logger;
         }
 
         public async Task<ChatResponseDto> SendMessageAsync(int userId, ChatRequestDto request)
         {
+            request.Message = request.Message.Trim();
+
             // Handle session
             var session = await _sessionRepository.GetBySessionIdAsync(request.SessionId);
             if (session == null)
@@ -47,6 +52,9 @@ namespace Chatbot.API.Services.Implementation
             }
             else
             {
+                if (session.UserId != userId)
+                    throw new UnauthorizedAccessException("You do not have access to this chat session.");
+
                 session.LastMessageAt = DateTime.UtcNow;
                 await _sessionRepository.UpdateAsync(session);
             }
@@ -77,21 +85,76 @@ namespace Chatbot.API.Services.Implementation
             }
             else
             {
-                var hasRelevantDocs = await _retrievalService.HasRelevantDocumentsAsync(request.Message);
+                var correctedMessage = await _aiService.CorrectSpellingAsync(request.Message);
+                var normalizedMessage = NormalizeQuery(correctedMessage);
 
-                if (!hasRelevantDocs)
+                _logger.LogInformation(
+                    "Original chat query: {Original} | Corrected query: {Corrected}",
+                    request.Message,
+                    correctedMessage);
+
+                if (IsProductOrServiceQuestion(normalizedMessage))
                 {
-                    reply = _aiService.GetFallbackResponse();
+                    reply = "For questions about UBA products and services, please visit ubagroup.com or speak to a UBA representative.";
                 }
                 else
                 {
-                    var (context, sourceCitations) = await _retrievalService.BuildContextWithCitationsAsync(request.Message);
-                    citations = sourceCitations;
+                    var hasRelevantDocs = await _retrievalService.HasRelevantDocumentsAsync(normalizedMessage);
 
-                    var rawHistory = await _chatHistoryRepository.GetBySessionIdAsync(session.SessionId);
-                    var history = rawHistory.Select(h => (h.Role, h.Message)).ToList();
+                    if (!hasRelevantDocs)
+                    {
+                        _logger.LogInformation(
+                            "No database context found. Trying UBA-only live fallback for: {Query}",
+                            normalizedMessage);
 
-                    reply = await _aiService.GetResponseWithHistoryAsync(request.Message, context, history);
+                        var liveResult = await _webSearchService.SearchUbaWebsiteAsync(normalizedMessage);
+                        if (liveResult != null)
+                        {
+                            reply = await _aiService.GetResponseAsync(correctedMessage, liveResult.Value.Content);
+                            citations.Add(new CitationDto
+                            {
+                                Topic = "UBA Website (Live)",
+                                Url = liveResult.Value.Url,
+                                Category = "live"
+                            });
+                        }
+                        else
+                        {
+                            reply = _aiService.GetFallbackResponse();
+                        }
+                    }
+                    else
+                    {
+                        var (context, sourceCitations) = await _retrievalService.BuildContextWithCitationsAsync(normalizedMessage);
+                        citations = sourceCitations;
+
+                        var rawHistory = await _chatHistoryRepository.GetBySessionIdAsync(session.SessionId);
+                        var history = rawHistory.Select(h => (h.Role, h.Message)).ToList();
+
+                        reply = await _aiService.GetResponseWithHistoryAsync(correctedMessage, context, history);
+
+                        if (IsFallbackReply(reply))
+                        {
+                            _logger.LogInformation(
+                                "Database context did not answer the query. Trying UBA-only live fallback for: {Query}",
+                                normalizedMessage);
+
+                            var liveResult = await _webSearchService.SearchUbaWebsiteAsync(normalizedMessage);
+                            if (liveResult != null)
+                            {
+                                reply = await _aiService.GetResponseAsync(correctedMessage, liveResult.Value.Content);
+                                citations = new List<CitationDto>
+                                {
+                                    new()
+                                    {
+                                        Topic = "UBA Website (Live)",
+                                        Url = liveResult.Value.Url,
+                                        Category = "live"
+                                    }
+                                };
+                            }
+                        }
+                    }
                 }
             }
 
@@ -168,6 +231,32 @@ namespace Chatbot.API.Services.Implementation
 
             var lower = message.ToLower().Trim();
             return greetings.Any(g => lower == g || lower.StartsWith(g + " ") || lower.EndsWith(" " + g));
+        }
+
+        private static string NormalizeQuery(string message)
+        {
+            return string.Join(" ", message
+                .Trim()
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        private static bool IsProductOrServiceQuestion(string message)
+        {
+            var lower = message.ToLowerInvariant();
+            var productTerms = new[]
+            {
+                "account", "accounts", "loan", "loans", "card", "cards", "transfer",
+                "mobile banking", "internet banking", "ussd", "atm", "fee", "fees",
+                "interest rate", "open an account", "bank app", "payment", "payments"
+            };
+
+            return productTerms.Any(lower.Contains);
+        }
+
+        private static bool IsFallbackReply(string reply)
+        {
+            return reply.Contains("I don't have enough information", StringComparison.OrdinalIgnoreCase) ||
+                   reply.Contains("I don't have that information", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

@@ -1,5 +1,4 @@
 ﻿using Chatbot.API.Core.DTOs;
-using Chatbot.API.Core.Models;
 using Chatbot.API.Repositories.Interface;
 using Chatbot.API.Services.Interface;
 
@@ -27,9 +26,20 @@ namespace Chatbot.API.Services.Implementation
             });
         }
 
-        public async Task<User?> GetUserByIdAsync(int id)
+        public async Task<UserResponseDto?> GetUserByIdAsync(int id)
         {
-            return await _userRepository.GetByIdAsync(id);
+            var user = await _userRepository.GetByIdAsync(id);
+            if (user == null)
+                return null;
+
+            return new UserResponseDto
+            {
+                Id = user.Id,
+                FullName = user.FullName,
+                Email = user.Email,
+                Role = user.Role,
+                CreatedAt = user.CreatedAt
+            };
         }
 
         public async Task<string> UpdateUserAsync(int id, UpdateUserDto dto)
@@ -39,8 +49,12 @@ namespace Chatbot.API.Services.Implementation
             if (user == null)
                 return "User not found";
 
-            user.FullName = dto.FullName;
-            user.Email = dto.Email;
+            if (string.IsNullOrWhiteSpace(dto.FullName) ||
+                string.IsNullOrWhiteSpace(dto.Email))
+                return "Full name and email are required";
+
+            user.FullName = dto.FullName.Trim();
+            user.Email = dto.Email.Trim();
 
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();

@@ -26,8 +26,18 @@ namespace Chatbot.API.Controllers
         public async Task<IActionResult> Chat([FromBody] ChatRequestDto request)
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var result = await _chatService.SendMessageAsync(userId, request);
-            return Ok(result);
+            if (request == null || string.IsNullOrWhiteSpace(request.Message))
+                return BadRequest("Message is required");
+
+            try
+            {
+                var result = await _chatService.SendMessageAsync(userId, request);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
         }
 
         [HttpGet("history/{sessionId}")]
@@ -59,6 +69,9 @@ namespace Chatbot.API.Controllers
         [HttpGet("test-context")]
         public async Task<IActionResult> TestContext([FromQuery] string query)
         {
+            if (string.IsNullOrWhiteSpace(query))
+                return BadRequest("Query is required");
+
             var docs = await _retrievalService.GetRelevantDocumentsAsync(query);
             var context = await _retrievalService.BuildContextAsync(query);
 
