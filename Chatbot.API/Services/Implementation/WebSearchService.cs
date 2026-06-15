@@ -13,7 +13,8 @@ namespace Chatbot.API.Services.Implementation
         private static readonly string[] BlockedPathTerms =
         {
             "account", "accounts", "card", "cards", "loan", "loans", "banking",
-            "mobile-banking", "internet-banking", "ussd", "transfer", "payments"
+            "mobile-banking", "internet-banking", "ussd", "transfer", "payments",
+            "/category/", "/tag/", "/author/"
         };
 
         private readonly HttpClient _httpClient;
@@ -33,6 +34,7 @@ namespace Chatbot.API.Services.Implementation
             try
             {
                 var candidates = await GetCandidateUrlsAsync(query);
+                var queryIntent = GetQueryIntent(query);
 
                 foreach (var url in candidates.Take(8))
                 {
@@ -40,7 +42,7 @@ namespace Chatbot.API.Services.Implementation
                     if (string.IsNullOrWhiteSpace(content))
                         continue;
 
-                    if (LooksRelevant(query, content))
+                    if (LooksRelevant(query, content) || IsIntentMatch(url, queryIntent))
                         return (content, url.ToString());
                 }
             }
@@ -69,9 +71,10 @@ namespace Chatbot.API.Services.Implementation
                 urls.Add(BaseUri);
 
             var queryTerms = GetSignificantTerms(query).ToList();
+            var queryIntent = GetQueryIntent(query);
 
             return urls
-                .OrderByDescending(uri => ScoreUrl(uri, queryTerms))
+                .OrderByDescending(uri => ScoreUrl(uri, queryTerms, queryIntent))
                 .ThenBy(uri => uri.AbsoluteUri.Length)
                 .Take(20)
                 .ToList();
@@ -141,9 +144,9 @@ namespace Chatbot.API.Services.Implementation
                 .SelectNodes("//main//h1 | //main//h2 | //main//h3 | //main//p | //main//li | //article//h1 | //article//h2 | //article//h3 | //article//p | //article//li | //h1 | //h2 | //h3 | //p | //li")
                 ?.Select(node => WebUtility.HtmlDecode(node.InnerText).Trim())
                 .Select(text => Regex.Replace(text, "\\s+", " "))
-                .Where(text => text.Length > 40)
+                .Where(text => text.Length > 10)
                 .Distinct()
-                .Take(30)
+                .Take(60)
                 .ToList();
 
             if (texts == null || texts.Count == 0)
@@ -173,7 +176,7 @@ namespace Chatbot.API.Services.Implementation
             return BlockedPathTerms.Any(term => path.Contains(term));
         }
 
-        private static int ScoreUrl(Uri uri, IReadOnlyCollection<string> terms)
+        private static int ScoreUrl(Uri uri, IReadOnlyCollection<string> terms, QueryIntent intent)
         {
             var path = WebUtility.UrlDecode(uri.AbsolutePath).ToLowerInvariant();
             var score = terms.Count(term => path.Contains(term));
@@ -183,6 +186,12 @@ namespace Chatbot.API.Services.Implementation
             if (path.Contains("leadership")) score += 2;
             if (path.Contains("foundation")) score += 2;
             if (path.Contains("history")) score += 2;
+            if (path.Contains("/category/")) score -= 10;
+            if (path.Contains("/tag/")) score -= 10;
+            if (intent == QueryIntent.Leadership && path.Contains("leadership")) score += 20;
+            if (intent == QueryIntent.Leadership && path.Contains("about")) score += 5;
+            if (intent == QueryIntent.Foundation && path.Contains("foundation")) score += 20;
+            if (intent == QueryIntent.History && (path.Contains("history") || path.Contains("who-we-are"))) score += 15;
             if (IsProductOrServicePath(uri)) score -= 20;
 
             return score;
@@ -198,6 +207,18 @@ namespace Chatbot.API.Services.Implementation
             return terms.Any(term => lowerContent.Contains(term));
         }
 
+        private static bool IsIntentMatch(Uri uri, QueryIntent intent)
+        {
+            var path = WebUtility.UrlDecode(uri.AbsolutePath).ToLowerInvariant();
+            return intent switch
+            {
+                QueryIntent.Leadership => path.Contains("leadership"),
+                QueryIntent.Foundation => path.Contains("foundation"),
+                QueryIntent.History => path.Contains("history") || path.Contains("who-we-are"),
+                _ => false
+            };
+        }
+
         private static IEnumerable<string> GetSignificantTerms(string text)
         {
             var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -211,6 +232,35 @@ namespace Chatbot.API.Services.Implementation
                 .Select(match => match.Value)
                 .Where(term => term.Length > 2 && !stopWords.Contains(term))
                 .Distinct();
+        }
+
+        private static QueryIntent GetQueryIntent(string query)
+        {
+            var lower = query.ToLowerInvariant();
+            if (lower.Contains("ceo") ||
+                lower.Contains("chief executive") ||
+                lower.Contains("managing director") ||
+                lower.Contains("chairman") ||
+                lower.Contains("leader") ||
+                lower.Contains("leadership") ||
+                lower.Contains("executive"))
+                return QueryIntent.Leadership;
+
+            if (lower.Contains("foundation") || lower.Contains("education") || lower.Contains("impact"))
+                return QueryIntent.Foundation;
+
+            if (lower.Contains("history") || lower.Contains("founded") || lower.Contains("incorporated"))
+                return QueryIntent.History;
+
+            return QueryIntent.General;
+        }
+
+        private enum QueryIntent
+        {
+            General,
+            Leadership,
+            Foundation,
+            History
         }
     }
 }
