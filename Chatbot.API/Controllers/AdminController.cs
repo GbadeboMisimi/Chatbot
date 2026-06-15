@@ -47,40 +47,40 @@ namespace Chatbot.API.Controllers
             return Ok(status);
         }
 
-        [HttpGet("test-retrieval")]
-        public async Task<IActionResult> TestRetrieval([FromQuery] string query)
-        {
-            var docs = await _retrievalService.GetRelevantDocumentsAsync(query);
-            return Ok(new
-            {
-                Count = docs.Count(),
-                Documents = docs.Select(d => new
-                {
-                    d.Topic,
-                    d.Category,
-                    ContentPreview = d.Content.Substring(0, Math.Min(100, d.Content.Length))
-                })
-            });
-        }
+        //[HttpGet("test-retrieval")]
+        //public async Task<IActionResult> TestRetrieval([FromQuery] string query)
+        //{
+        //    var docs = await _retrievalService.GetRelevantDocumentsAsync(query);
+        //    return Ok(new
+        //    {
+        //        Count = docs.Count(),
+        //        Documents = docs.Select(d => new
+        //        {
+        //            d.Topic,
+        //            d.Category,
+        //            ContentPreview = d.Content.Substring(0, Math.Min(100, d.Content.Length))
+        //        })
+        //    });
+        //}
 
-        [HttpGet("test-embedding")]
-        public async Task<IActionResult> TestEmbedding()
-        {
-            var embedding = await _embeddingService.GetEmbeddingAsync("What is UBA?");
-            if (embedding.Length == 0)
-                return BadRequest("Embedding failed");
-            return Ok($"Embedding successful - {embedding.Length} dimensions");
-        }
+        //[HttpGet("test-embedding")]
+        //public async Task<IActionResult> TestEmbedding()
+        //{
+        //    var embedding = await _embeddingService.GetEmbeddingAsync("What is UBA?");
+        //    if (embedding.Length == 0)
+        //        return BadRequest("Embedding failed");
+        //    return Ok($"Embedding successful - {embedding.Length} dimensions");
+        //}
 
-        [HttpGet("list-models")]
-        public async Task<IActionResult> ListModels()
-        {
-            using var client = new HttpClient();
-            var apiKey = _configuration["GeminiSettings:ApiKey"];
-            var response = await client.GetStringAsync(
-                $"https://generativelanguage.googleapis.com/v1beta/models?key={apiKey}");
-            return Ok(response);
-        }
+        //[HttpGet("list-models")]
+        //public async Task<IActionResult> ListModels()
+        //{
+        //    using var client = new HttpClient();
+        //    var apiKey = _configuration["GeminiSettings:ApiKey"];
+        //    var response = await client.GetStringAsync(
+        //        $"https://generativelanguage.googleapis.com/v1beta/models?key={apiKey}");
+        //    return Ok(response);
+        //}
 
 
         //[HttpGet("test-scrape")]

@@ -91,6 +91,8 @@ try
     builder.Services.AddScoped<IRetrievalService, RetrievalService>();
     builder.Services.AddScoped<IAiService, AiService>();
     builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
+    builder.Services.AddScoped<ISessionService, SessionService>();
+    builder.Services.AddScoped<IChatService, ChatService>();
 
     var app = builder.Build();
 

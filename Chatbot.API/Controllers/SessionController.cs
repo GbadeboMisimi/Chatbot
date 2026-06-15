@@ -1,6 +1,5 @@
 ﻿using Chatbot.API.Core.DTOs;
-using Chatbot.API.Core.Models;
-using Chatbot.API.Repositories.Interface;
+using Chatbot.API.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -12,52 +11,26 @@ namespace Chatbot.API.Controllers
     [Authorize]
     public class SessionController : ControllerBase
     {
-        private readonly IChatSessionRepository _sessionRepository;
+        private readonly ISessionService _sessionService;
 
-        public SessionController(IChatSessionRepository sessionRepository)
+        public SessionController(ISessionService sessionService)
         {
-            _sessionRepository = sessionRepository;
+            _sessionService = sessionService;
         }
 
         [HttpPost]
         public async Task<IActionResult> CreateSession([FromBody] CreateSessionDto dto)
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-
-            var session = new ChatSession
-            {
-                SessionId = Guid.NewGuid(),
-                Title = string.IsNullOrEmpty(dto.Title) ? "New Chat" : dto.Title,
-                UserId = userId,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await _sessionRepository.AddAsync(session);
-            await _sessionRepository.SaveChangesAsync();
-
-            return Ok(new ChatSessionResponseDto
-            {
-                SessionId = session.SessionId,
-                Title = session.Title,
-                CreatedAt = session.CreatedAt,
-                LastMessageAt = session.LastMessageAt
-            });
+            var result = await _sessionService.CreateSessionAsync(userId, dto);
+            return Ok(result);
         }
 
         [HttpGet]
         public async Task<IActionResult> GetSessions()
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var sessions = await _sessionRepository.GetByUserIdAsync(userId);
-
-            var result = sessions.Select(s => new ChatSessionResponseDto
-            {
-                SessionId = s.SessionId,
-                Title = s.Title,
-                CreatedAt = s.CreatedAt,
-                LastMessageAt = s.LastMessageAt
-            });
-
+            var result = await _sessionService.GetSessionsAsync(userId);
             return Ok(result);
         }
 
@@ -65,19 +38,12 @@ namespace Chatbot.API.Controllers
         public async Task<IActionResult> DeleteSession(Guid sessionId)
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _sessionService.DeleteSessionAsync(userId, sessionId);
 
-            var session = await _sessionRepository.GetBySessionIdAsync(sessionId);
+            if (result == "Not found") return NotFound(result);
+            if (result == "Forbidden") return Forbid();
 
-            if (session == null)
-                return NotFound("Session not found");
-
-            if (session.UserId != userId)
-                return Forbid();
-
-            await _sessionRepository.DeleteAsync(sessionId);
-            await _sessionRepository.SaveChangesAsync();
-
-            return Ok("Session deleted");
+            return Ok(result);
         }
     }
 }

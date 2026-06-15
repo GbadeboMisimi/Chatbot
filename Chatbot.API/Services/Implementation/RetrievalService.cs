@@ -2,6 +2,7 @@
 using Chatbot.API.Core.Models;
 using Chatbot.API.Repositories.Interface;
 using Chatbot.API.Services.Interface;
+using FuzzySharp;
 using Newtonsoft.Json;
 
 namespace Chatbot.API.Services.Implementation
@@ -55,7 +56,15 @@ namespace Chatbot.API.Services.Implementation
                 "Found {Count} relevant documents for query: {Query}",
                 scoredDocuments.Count, query);
 
-            return scoredDocuments;
+            if (scoredDocuments.Any())
+            {
+                return scoredDocuments;
+            }
+
+            _logger.LogInformation(
+                "No embedding matches found. Trying fuzzy search.");
+
+            return await FuzzySearchAsync(query, topK); ;
         }
 
         //public async Task<string> BuildContextAsync(string query)
@@ -179,5 +188,54 @@ namespace Chatbot.API.Services.Implementation
                 .Select(x => x.Document)
                 .ToList();
         }
+
+        private async Task<IEnumerable<ChatDocument>> FuzzySearchAsync(string query, int topK)
+        {
+            var allDocuments = await _documentRepository.GetAllAsync();
+
+            var matches = allDocuments
+                .Select(doc => new
+                {
+                    Document = doc,
+
+                    Score = Math.Max(
+                        Fuzz.PartialRatio(query, doc.Topic),
+                        Math.Max(
+                            Fuzz.PartialRatio(query, doc.Category),
+                            Fuzz.PartialRatio(
+                                query,
+                                doc.Content.Length > 300
+                                    ? doc.Content.Substring(0, 300)
+                                    : doc.Content)
+                        )
+                    )
+                })
+                .Where(x => x.Score >= 80)
+                .OrderByDescending(x => x.Score)
+                .Take(topK)
+                .Select(x => x.Document)
+                .ToList();
+
+            return matches;
+        }
+
+        //private async Task<string?> FindClosestTopicAsync(string query)
+        //{
+        //    var docs = await _documentRepository.GetAllAsync();
+
+        //    var bestMatch = docs
+        //        .Select(d => new
+        //        {
+        //            Topic = d.Topic,
+        //            Score = Fuzz.PartialRatio(query, d.Topic)
+        //        })
+        //        .OrderByDescending(x => x.Score)
+        //        .FirstOrDefault();
+
+        //    if (bestMatch != null && bestMatch.Score >= 85)
+        //        return bestMatch.Topic;
+
+        //    return null;
+        //}
     }
 }
