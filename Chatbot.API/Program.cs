@@ -9,8 +9,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
-try
-{
+//try
+//{
     var builder = WebApplication.CreateBuilder(args);
 
     // Add services to the container.
@@ -142,11 +142,11 @@ try
 
     app.Run();
 
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"STARTUP ERROR: {ex.Message}");
-    Console.WriteLine($"INNER: {ex.InnerException?.Message}");
-    Console.WriteLine($"STACK: {ex.StackTrace}");
-    Environment.ExitCode = 1;
-}
+//}
+//catch (Exception ex)
+//{
+//    Console.WriteLine($"STARTUP ERROR: {ex.Message}");
+//    Console.WriteLine($"INNER: {ex.InnerException?.Message}");
+//    Console.WriteLine($"STACK: {ex.StackTrace}");
+//    Environment.ExitCode = 1;
+//}
