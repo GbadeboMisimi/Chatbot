@@ -25,8 +25,11 @@ namespace Chatbot.API.Services.Implementation
 
         public async Task<IEnumerable<ChatDocument>> GetRelevantDocumentsAsync(string query, int topK = 10)
         {
+            _logger.LogInformation("Starting vector search for query: {Query}", query);
+
             // Generate embedding for the query
             var queryEmbedding = await _embeddingService.GetEmbeddingAsync(query);
+            _logger.LogInformation("Query embedding length: {Length}", queryEmbedding.Length);
 
             // Fall back to keyword search if embedding fails
             if (queryEmbedding.Length == 0)
@@ -39,54 +42,47 @@ namespace Chatbot.API.Services.Implementation
             var allDocuments = await _documentRepository.GetAllWithEmbeddingsAsync();
 
             // Score each document by cosine similarity
+            const double similarityThreshold = 0.70;
+
             var scoredDocuments = allDocuments
                 .Where(doc => !string.IsNullOrEmpty(doc.Embedding))
                 .Select(doc =>
                 {
                     var docEmbedding = JsonConvert.DeserializeObject<float[]>(doc.Embedding!)!;
-                    var similarity = _embeddingService.CosineSimilarity(queryEmbedding, docEmbedding);
-                    return new { Document = doc, Score = similarity };
+
+                    return new
+                    {
+                        Document = doc,
+                        Score = _embeddingService.CosineSimilarity(
+                            queryEmbedding,
+                            docEmbedding)
+                    };
                 })
+                .Where(x => x.Score >= similarityThreshold)
                 .OrderByDescending(x => x.Score)
                 .Take(topK)
-                .Select(x => x.Document)
                 .ToList();
 
             _logger.LogInformation(
                 "Found {Count} relevant documents for query: {Query}",
                 scoredDocuments.Count, query);
-
             if (scoredDocuments.Any())
             {
-                return scoredDocuments;
+                return scoredDocuments.Select(x => x.Document);
             }
 
             _logger.LogInformation(
                 "No embedding matches found. Trying fuzzy search.");
 
-            return await FuzzySearchAsync(query, topK); ;
+            var fuzzyResults = await FuzzySearchAsync(query, topK);
+
+            if (fuzzyResults.Any())
+            {
+                return fuzzyResults;
+            }
+
+            return Enumerable.Empty<ChatDocument>();
         }
-
-        //public async Task<string> BuildContextAsync(string query)
-        //{
-        //    var documents = await GetRelevantDocumentsAsync(query);
-
-        //    if (!documents.Any())
-        //        return string.Empty;
-
-        //    var context = new System.Text.StringBuilder();
-
-        //    foreach (var doc in documents)
-        //    {
-        //        context.AppendLine($"[{doc.Topic}]");
-        //        context.AppendLine(doc.Content);
-        //        context.AppendLine();
-        //    }
-
-        //    return context.ToString().Trim();
-        //}
-
-
 
 
         public async Task<string> BuildContextAsync(string query)

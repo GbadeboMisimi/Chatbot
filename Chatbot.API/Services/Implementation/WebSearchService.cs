@@ -29,30 +29,102 @@ namespace Chatbot.API.Services.Implementation
             _logger = logger;
         }
 
+
+
+
         public async Task<(string Content, string Url)?> SearchUbaWebsiteAsync(string query)
         {
             try
             {
+                _logger.LogInformation(
+                    "Searching UBA website for query: {Query}",
+                    query);
+
                 var candidates = await GetCandidateUrlsAsync(query);
+
+                _logger.LogInformation(
+                    "Candidate URLs found: {Count}",
+                    candidates.Count);
+
                 var queryIntent = GetQueryIntent(query);
 
                 foreach (var url in candidates.Take(8))
                 {
+                    _logger.LogInformation(
+                        "Checking URL: {Url}",
+                        url);
+
                     var content = await ScrapeUbaPageAsync(url);
+
                     if (string.IsNullOrWhiteSpace(content))
+                    {
+                        _logger.LogInformation(
+                            "No content found for URL: {Url}",
+                            url);
+
                         continue;
+                    }
 
                     if (LooksRelevant(query, content) || IsIntentMatch(url, queryIntent))
+                    {
+                        _logger.LogInformation(
+                            "Relevant page found: {Url}",
+                            url);
+
                         return (content, url.ToString());
+                    }
+
+                    _logger.LogInformation(
+                        "Page not relevant: {Url}",
+                        url);
                 }
+
+                _logger.LogInformation(
+                    "No matching page found for query: {Query}",
+                    query);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "UBA live website fallback failed for query: {Query}", query);
+                _logger.LogError(
+                    ex,
+                    "UBA live website fallback failed for query: {Query}",
+                    query);
             }
 
             return null;
         }
+
+
+
+
+
+
+
+
+        //public async Task<(string Content, string Url)?> SearchUbaWebsiteAsync(string query)
+        //{
+        //    try
+        //    {
+        //        var candidates = await GetCandidateUrlsAsync(query);
+        //        var queryIntent = GetQueryIntent(query);
+
+        //        foreach (var url in candidates.Take(8))
+        //        {
+        //            var content = await ScrapeUbaPageAsync(url);
+        //            if (string.IsNullOrWhiteSpace(content))
+        //                continue;
+
+        //            if (LooksRelevant(query, content) || IsIntentMatch(url, queryIntent))
+        //                return (content, url.ToString());
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "UBA live website fallback failed for query: {Query}", query);
+        //    }
+
+        //    return null;
+        //}
 
         private async Task<List<Uri>> GetCandidateUrlsAsync(string query)
         {
@@ -120,15 +192,25 @@ namespace Chatbot.API.Services.Implementation
                 .ToList();
         }
 
+
+
         private async Task<string?> ScrapeUbaPageAsync(Uri url)
         {
             if (!IsAllowedUbaUri(url))
             {
-                _logger.LogWarning("Blocked non-UBA URL during live fallback: {Url}", url);
+                _logger.LogWarning(
+                    "Blocked non-UBA URL during live fallback: {Url}",
+                    url);
+
                 return null;
             }
 
             var html = await _httpClient.GetStringAsync(url);
+            File.WriteAllText( @"C:\Temp\uba-page.html", html);
+
+            _logger.LogInformation(
+                "Downloaded {Length} characters from {Url}", html.Length, url);
+
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
 
@@ -140,20 +222,96 @@ namespace Chatbot.API.Services.Implementation
                 node.Remove();
             }
 
-            var texts = doc.DocumentNode
-                .SelectNodes("//main//h1 | //main//h2 | //main//h3 | //main//p | //main//li | //article//h1 | //article//h2 | //article//h3 | //article//p | //article//li | //h1 | //h2 | //h3 | //p | //li")
-                ?.Select(node => WebUtility.HtmlDecode(node.InnerText).Trim())
+            var nodes = doc.DocumentNode.SelectNodes(
+                "//main//h1 | //main//h2 | //main//h3 | //main//p | //main//li | " +
+                "//article//h1 | //article//h2 | //article//h3 | //article//p | //article//li | " +
+                "//h1 | //h2 | //h3 | //p | //li");
+
+            _logger.LogInformation(
+                "Found {Count} nodes for {Url}",
+                nodes?.Count ?? 0,
+                url);
+
+            var texts = nodes?
+                .Select(node => WebUtility.HtmlDecode(node.InnerText).Trim())
                 .Select(text => Regex.Replace(text, "\\s+", " "))
                 .Where(text => text.Length > 10)
                 .Distinct()
                 .Take(60)
                 .ToList();
 
+            if (texts != null && texts.Any())
+            {
+                _logger.LogInformation(
+                    "First extracted text from {Url}: {Text}",
+                    url,
+                    texts.First());
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "No text extracted from {Url}",
+                    url);
+            }
+
             if (texts == null || texts.Count == 0)
                 return null;
 
             return string.Join(Environment.NewLine, texts);
         }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        //private async Task<string?> ScrapeUbaPageAsync(Uri url)
+        //{
+        //    if (!IsAllowedUbaUri(url))
+        //    {
+        //        _logger.LogWarning("Blocked non-UBA URL during live fallback: {Url}", url);
+        //        return null;
+        //    }
+
+        //    var html = await _httpClient.GetStringAsync(url);
+        //    _logger.LogInformation("Downloaded {Length} characters from {Url}", html.Length, url);
+
+        //    var doc = new HtmlDocument();
+        //    doc.LoadHtml(html);
+
+        //    foreach (var node in doc.DocumentNode
+        //        .Descendants()
+        //        .Where(n => n.Name is "script" or "style" or "nav" or "footer" or "header" or "noscript")
+        //        .ToList())
+        //    {
+        //        node.Remove();
+        //    }
+
+        //    var texts = doc.DocumentNode
+        //        .SelectNodes("//main//h1 | //main//h2 | //main//h3 | //main//p | //main//li | //article//h1 | //article//h2 | //article//h3 | //article//p | //article//li | //h1 | //h2 | //h3 | //p | //li")
+        //        ?.Select(node => WebUtility.HtmlDecode(node.InnerText).Trim())
+        //        .Select(text => Regex.Replace(text, "\\s+", " "))
+        //        .Where(text => text.Length > 10)
+        //        .Distinct()
+        //        .Take(60)
+        //        .ToList();
+        //    if (texts == null || texts.Count == 0)
+        //        return null;
+
+        //    return string.Join(Environment.NewLine, texts);
+        //}
 
         private static Uri? CreateAllowedUri(string value)
         {

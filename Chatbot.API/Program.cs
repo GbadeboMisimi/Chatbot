@@ -6,7 +6,10 @@ using Chatbot.API.Services.Implementation;
 using Chatbot.API.Services.Interface;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.IdentityModel.Tokens;
+using OpenAI;
+using System.ClientModel;
 using System.Text;
 
 //try
@@ -14,6 +17,24 @@ using System.Text;
     var builder = WebApplication.CreateBuilder(args);
 
     // Add services to the container.
+    var credential = new ApiKeyCredential(
+    builder.Configuration["GitHubModels:Token"]
+    ?? throw new InvalidOperationException("Missing GitHubModels:Token"));
+
+    var openAIOptions = new OpenAIClientOptions
+    {
+        Endpoint = new Uri("https://models.inference.ai.azure.com")
+    };
+
+    var ghModelsClient = new OpenAIClient(credential, openAIOptions);
+
+    builder.Services.AddSingleton(
+      ghModelsClient.GetChatClient("gpt-4o-mini").AsIChatClient());
+
+    builder.Services.AddSingleton(
+      ghModelsClient.GetEmbeddingClient("text-embedding-3-small").AsIEmbeddingGenerator());
+
+
 
     builder.Services.AddControllers();
     // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
