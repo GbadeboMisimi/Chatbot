@@ -16,27 +16,21 @@ using System.Text;
 //{
     var builder = WebApplication.CreateBuilder(args);
 
-    // Add services to the container.
-    var credential = new ApiKeyCredential(
-    builder.Configuration["GitHubModels:Token"]
-    ?? throw new InvalidOperationException("Missing GitHubModels:Token"));
+// Add services to the container.
+var credential = new ApiKeyCredential(
+builder.Configuration["OpenAi:Token"]
+?? throw new InvalidOperationException("Missing OpenAi:Token"));
 
-    var openAIOptions = new OpenAIClientOptions
-    {
-        Endpoint = new Uri("https://models.inference.ai.azure.com")
-    };
+var ghModelsClient = new OpenAIClient(credential);
 
-    var ghModelsClient = new OpenAIClient(credential, openAIOptions);
+builder.Services.AddSingleton(
+    ghModelsClient.GetChatClient("gpt-4o-mini").AsIChatClient());
 
-    builder.Services.AddSingleton(
-      ghModelsClient.GetChatClient("gpt-4o-mini").AsIChatClient());
-
-    builder.Services.AddSingleton(
-      ghModelsClient.GetEmbeddingClient("text-embedding-3-small").AsIEmbeddingGenerator());
+builder.Services.AddSingleton(
+    ghModelsClient.GetEmbeddingClient("text-embedding-3-small").AsIEmbeddingGenerator());
 
 
-
-    builder.Services.AddControllers();
+builder.Services.AddControllers();
     // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(options =>
@@ -122,6 +116,7 @@ using System.Text;
     builder.Services.AddScoped<IWebSearchService, WebSearchService>();
     builder.Services.AddScoped<ISessionService, SessionService>();
     builder.Services.AddScoped<IChatService, ChatService>();
+    builder.Services.AddScoped<IChatHandler, ChatHandler>();
 
     var app = builder.Build();
 

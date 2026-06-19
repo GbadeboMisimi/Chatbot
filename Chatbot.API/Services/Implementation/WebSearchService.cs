@@ -206,7 +206,6 @@ namespace Chatbot.API.Services.Implementation
             }
 
             var html = await _httpClient.GetStringAsync(url);
-            File.WriteAllText( @"C:\Temp\uba-page.html", html);
 
             _logger.LogInformation(
                 "Downloaded {Length} characters from {Url}", html.Length, url);

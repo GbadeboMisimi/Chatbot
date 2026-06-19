@@ -48,13 +48,12 @@ namespace Chatbot.API.Services.Implementation
                     _logger.LogInformation("Scraping: {Url}", url);
 
                     var page = await context.NewPageAsync();
-                    await page.GotoAsync(url, new PageGotoOptions
+                    await page.GotoAsync(url.ToString(), new()
                     {
-                        WaitUntil = WaitUntilState.NetworkIdle,
-                        Timeout = 60000
+                        WaitUntil = WaitUntilState.DOMContentLoaded,
+                        Timeout = 30000
                     });
 
-                    // Wait for content to load
                     await page.WaitForTimeoutAsync(2000);
 
                     // Extract text from page

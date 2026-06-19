@@ -13,6 +13,7 @@ namespace Chatbot.API.Services.Implementation
         private readonly IChatSessionRepository _sessionRepository;
         private readonly IWebSearchService _webSearchService;
         private readonly ILogger<ChatService> _logger;
+        private readonly IChatHandler _chatHandler;
 
         public ChatService(
             IAiService aiService,
@@ -20,7 +21,8 @@ namespace Chatbot.API.Services.Implementation
             IChatHistoryRepository chatHistoryRepository,
             IChatSessionRepository sessionRepository,
             IWebSearchService webSearchService,
-            ILogger<ChatService> logger)
+            ILogger<ChatService> logger,
+            IChatHandler chatHandler)
         {
             _aiService = aiService;
             _retrievalService = retrievalService;
@@ -28,213 +30,20 @@ namespace Chatbot.API.Services.Implementation
             _sessionRepository = sessionRepository;
             _webSearchService = webSearchService;
             _logger = logger;
+            _chatHandler = chatHandler;
         }
-
         public async Task<ChatResponseDto> SendMessageAsync(int userId, ChatRequestDto request)
         {
-            request.Message = request.Message.Trim();
-
-            // Handle session
-            var session = await _sessionRepository.GetBySessionIdAsync(request.SessionId);
-
-            if (session == null)
-            {
-                session = new ChatSession
-                {
-                    SessionId = request.SessionId == Guid.Empty
-                        ? Guid.NewGuid()
-                        : request.SessionId,
-                    Title = request.Message.Length > 50
-                        ? request.Message.Substring(0, 50) + "..."
-                        : request.Message,
-                    UserId = userId,
-                    CreatedAt = DateTime.UtcNow,
-                    LastMessageAt = DateTime.UtcNow
-                };
-
-                await _sessionRepository.AddAsync(session);
-            }
-            else
-            {
-                if (session.UserId != userId)
-                    throw new UnauthorizedAccessException(
-                        "You do not have access to this chat session.");
-
-                session.LastMessageAt = DateTime.UtcNow;
-                await _sessionRepository.UpdateAsync(session);
-            }
-
-            await _sessionRepository.SaveChangesAsync();
-
-            // Save user message
-            await _chatHistoryRepository.AddAsync(new ChatHistory
-            {
-                UserId = userId,
-                SessionId = session.SessionId,
-                Role = "user",
-                Message = request.Message,
-                SentAt = DateTime.UtcNow
-            });
-
-            await _chatHistoryRepository.SaveChangesAsync();
-
-            string reply;
-            List<CitationDto> citations = new();
-
-            // Greeting
-            if (IsGreeting(request.Message))
-            {
-                reply =
-                    "Hello! Welcome to UBA. How can I help you today? " +
-                    "You can ask me about UBA's history, leadership, careers, " +
-                    "global presence, contact information, and more.";
-            }
-            // AI unavailable
-            else if (!await _aiService.IsAvailableAsync())
-            {
-                reply = "AI service is currently unavailable. Please try again later.";
-            }
-            else
-            {
-                string correctedMessage;
-
-                try
-                {
-                    correctedMessage =
-                        await _aiService.CorrectSpellingAsync(request.Message);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(
-                        ex,
-                        "Spelling correction failed. Using original query.");
-
-                    correctedMessage = request.Message;
-                }
-
-                var normalizedMessage = NormalizeQuery(correctedMessage);
-
-                _logger.LogInformation(
-                    "Original query: {Original} | Corrected query: {Corrected}",
-                    request.Message,
-                    correctedMessage);
-
-                // Block product/service questions
-                if (IsProductOrServiceQuestion(normalizedMessage))
-                {
-                    reply =
-                        "For questions about UBA products and services, " +
-                        "please visit ubagroup.com or speak to a UBA representative.";
-                }
-                else
-                {
-                    var (context, sourceCitations) =
-                        await _retrievalService.BuildContextWithCitationsAsync(
-                            normalizedMessage);
-
-                    bool hasRelevantDocs =
-                        !string.IsNullOrWhiteSpace(context);
-
-                    // DATABASE MISSED -> WEBSITE FALLBACK
-                    if (!hasRelevantDocs)
-                    {
-                        _logger.LogInformation(
-                            "No database context found. Searching UBA website.");
-
-                        var liveResult =
-                            await _webSearchService.SearchUbaWebsiteAsync(
-                                normalizedMessage);
-
-                        if (liveResult != null)
-                        {
-                            reply = await _aiService.GetResponseAsync(
-                                correctedMessage,
-                                liveResult.Value.Content);
-
-                            citations.Add(new CitationDto
-                            {
-                                Topic = "UBA Website (Live)",
-                                Url = liveResult.Value.Url,
-                                Category = "live"
-                            });
-                        }
-                        else
-                        {
-                            reply = _aiService.GetFallbackResponse();
-                        }
-                    }
-                    else
-                    {
-                        citations = sourceCitations;
-
-                        var rawHistory =
-                            await _chatHistoryRepository.GetBySessionIdAsync(
-                                session.SessionId);
-
-                        var history = rawHistory
-                            .Select(h => (h.Role, h.Message))
-                            .ToList();
-
-                        reply = await _aiService.GetResponseWithHistoryAsync(
-                            correctedMessage,
-                            context,
-                            history);
-
-                        // AI says no answer -> WEBSITE FALLBACK
-                        if (IsFallbackReply(reply))
-                        {
-                            _logger.LogInformation(
-                                "Database answer insufficient. Searching UBA website.");
-
-                            var liveResult =
-                                await _webSearchService.SearchUbaWebsiteAsync(
-                                    normalizedMessage);
-
-                            if (liveResult != null)
-                            {
-                                reply = await _aiService.GetResponseAsync(
-                                    correctedMessage,
-                                    liveResult.Value.Content);
-
-                                citations = new List<CitationDto>
-                    {
-                        new CitationDto
-                        {
-                            Topic = "UBA Website (Live)",
-                            Url = liveResult.Value.Url,
-                            Category = "live"
-                        }
-                    };
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Save assistant message
-            await _chatHistoryRepository.AddAsync(new ChatHistory
-            {
-                UserId = userId,
-                SessionId = session.SessionId,
-                Role = "Assistant",
-                Message = reply,
-                SentAt = DateTime.UtcNow
-            });
-
-            await _chatHistoryRepository.SaveChangesAsync();
-
-            return new ChatResponseDto
-            {
-                Reply = reply,
-                SessionId = session.SessionId,
-                Sources = citations
-            };
+            return await _chatHandler.HandleAsync(userId, request);
         }
 
 
-        public async Task<IEnumerable<ChatHistoryResponseDto>> GetSessionHistoryAsync(int userId, Guid sessionId)
+        public async Task<IEnumerable<ChatHistoryResponseDto>> GetSessionHistoryAsync(int userId, Guid? sessionId)
         {
-            var history = await _chatHistoryRepository.GetBySessionIdAsync(sessionId);
+            if (!sessionId.HasValue)
+                return Enumerable.Empty<ChatHistoryResponseDto>();
+
+            var history = await _chatHistoryRepository.GetBySessionIdAsync(sessionId.Value);
 
             return history
                 .Where(h => h.UserId == userId)
@@ -262,14 +71,17 @@ namespace Chatbot.API.Services.Implementation
             });
         }
 
-        public async Task<string> DeleteSessionHistoryAsync(int userId, Guid sessionId)
+        public async Task<string> DeleteSessionHistoryAsync(int userId, Guid? sessionId)
         {
-            var history = await _chatHistoryRepository.GetBySessionIdAsync(sessionId);
+            if (!sessionId.HasValue)
+                return "Not found";
+
+            var history = await _chatHistoryRepository.GetBySessionIdAsync(sessionId.Value);
 
             if (!history.Any(h => h.UserId == userId))
                 return "Not found";
 
-            await _chatHistoryRepository.DeleteSessionAsync(sessionId);
+            await _chatHistoryRepository.DeleteSessionAsync(sessionId.Value);
             await _chatHistoryRepository.SaveChangesAsync();
 
             return "Session deleted successfully";
