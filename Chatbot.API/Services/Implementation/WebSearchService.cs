@@ -55,6 +55,7 @@ namespace Chatbot.API.Services.Implementation
                         url);
 
                     var content = await ScrapeUbaPageAsync(url);
+                    _logger.LogInformation("Scraped content length from {Url}: {Length}", url, content?.Length ?? 0);
 
                     if (string.IsNullOrWhiteSpace(content))
                     {
@@ -139,17 +140,38 @@ namespace Chatbot.API.Services.Implementation
                 _logger.LogWarning(ex, "Could not read UBA sitemap. Falling back to homepage candidates.");
             }
 
+            // If sitemap provided no urls, or reading failed, fall back to crawling the homepage for candidates
             if (urls.Count == 0)
-                urls.Add(BaseUri);
+            {
+                _logger.LogInformation("No sitemap urls found, crawling homepage for candidates");
+                try
+                {
+                    var crawled = await CrawlHomepageAsync(BaseUri, maxLinks: 200);
+                    if (crawled.Any())
+                        urls.AddRange(crawled);
+                    else
+                        urls.Add(BaseUri);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Homepage crawl failed, using base uri as candidate");
+                    urls.Add(BaseUri);
+                }
+            }
 
             var queryTerms = GetSignificantTerms(query).ToList();
             var queryIntent = GetQueryIntent(query);
 
-            return urls
+            // Deduplicate and filter product/service pages early
+            var candidates = urls
                 .OrderByDescending(uri => ScoreUrl(uri, queryTerms, queryIntent))
                 .ThenBy(uri => uri.AbsoluteUri.Length)
-                .Take(20)
+                .Where(uri => !IsProductOrServicePath(uri))
+                .DistinctBy(uri => uri.AbsoluteUri)
+                .Take(50)
                 .ToList();
+
+            return candidates;
         }
 
         private async Task<List<Uri>> ReadSitemapUrlsAsync(Uri sitemapUri)
@@ -205,13 +227,29 @@ namespace Chatbot.API.Services.Implementation
                 return null;
             }
 
-            var html = await _httpClient.GetStringAsync(url);
+            string html;
+            try
+            {
+                html = await _httpClient.GetStringAsync(url);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to download {Url}", url);
+                return null;
+            }
 
-            _logger.LogInformation(
-                "Downloaded {Length} characters from {Url}", html.Length, url);
+            _logger.LogInformation("Downloaded {Length} characters from {Url}", html.Length, url);
 
             var doc = new HtmlDocument();
-            doc.LoadHtml(html);
+            try
+            {
+                doc.LoadHtml(html);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse HTML for {Url}", url);
+                return null;
+            }
 
             foreach (var node in doc.DocumentNode
                 .Descendants()
@@ -221,42 +259,77 @@ namespace Chatbot.API.Services.Implementation
                 node.Remove();
             }
 
+            // broaden node selection to capture more content including divs and spans used by many sites
             var nodes = doc.DocumentNode.SelectNodes(
-                "//main//h1 | //main//h2 | //main//h3 | //main//p | //main//li | " +
-                "//article//h1 | //article//h2 | //article//h3 | //article//p | //article//li | " +
-                "//h1 | //h2 | //h3 | //p | //li");
+                "//main//h1 | //main//h2 | //main//h3 | //main//h4 | //main//h5 | //main//h6 | //main//p | //main//li | " +
+                "//article//h1 | //article//h2 | //article//h3 | //article//h4 | //article//h5 | //article//h6 | //article//p | //article//li | " +
+                "//h1 | //h2 | //h3 | //h4 | //h5 | //h6 | //p | //li | //div | //span | //td | //caption");
 
             _logger.LogInformation(
-                "Found {Count} nodes for {Url}",
+                "Found {Count} candidate nodes for {Url}",
                 nodes?.Count ?? 0,
                 url);
 
-            var texts = nodes?
-                .Select(node => WebUtility.HtmlDecode(node.InnerText).Trim())
+            if (nodes == null || nodes.Count == 0)
+            {
+                _logger.LogWarning("No textual nodes found for {Url}", url);
+                return null;
+            }
+
+            // Preserve order and avoid aggressive deduplication so we don't lose lines
+            var texts = nodes
+                .Select(node => WebUtility.HtmlDecode(node.InnerText ?? string.Empty).Trim())
                 .Select(text => Regex.Replace(text, "\\s+", " "))
-                .Where(text => text.Length > 10)
-                .Distinct()
-                .Take(60)
+                // allow shorter but meaningful lines; filter out extremely short noise
+                .Where(text => text.Length > 2)
+                // keep original ordering; increase limit to capture more content
+                .Take(200)
                 .ToList();
 
-            if (texts != null && texts.Any())
-            {
-                _logger.LogInformation(
-                    "First extracted text from {Url}: {Text}",
-                    url,
-                    texts.First());
-            }
-            else
-            {
-                _logger.LogWarning(
-                    "No text extracted from {Url}",
-                    url);
-            }
+            _logger.LogInformation("Extracted {Count} text nodes from {Url}", texts.Count, url);
+            if (texts.Any())
+                _logger.LogInformation("First extracted text from {Url}: {Text}", url, texts.First());
 
-            if (texts == null || texts.Count == 0)
+            if (texts.Count == 0)
                 return null;
 
             return string.Join(Environment.NewLine, texts);
+        }
+
+        private async Task<IEnumerable<Uri>> CrawlHomepageAsync(Uri startUri, int maxLinks = 100)
+        {
+            var results = new List<Uri>();
+            try
+            {
+                var html = await _httpClient.GetStringAsync(startUri);
+                var doc = new HtmlDocument();
+                doc.LoadHtml(html);
+
+                var anchors = doc.DocumentNode.SelectNodes("//a[@href]") ?? new HtmlNodeCollection(doc.DocumentNode);
+
+                foreach (var a in anchors)
+                {
+                    var href = a.GetAttributeValue("href", string.Empty).Trim();
+                    if (string.IsNullOrEmpty(href)) continue;
+
+                    // Normalize relative urls
+                    if (Uri.TryCreate(startUri, href, out var uri))
+                    {
+                        if (IsAllowedUbaUri(uri) && !IsProductOrServicePath(uri))
+                        {
+                            results.Add(uri);
+                        }
+                    }
+
+                    if (results.Count >= maxLinks) break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Homepage crawl failed for {Url}", startUri);
+            }
+
+            return results.DistinctBy(u => u.AbsoluteUri).ToList();
         }
 
 

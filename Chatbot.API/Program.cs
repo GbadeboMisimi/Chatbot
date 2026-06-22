@@ -1,4 +1,5 @@
 using Chatbot.API.Core.Data;
+using Chatbot.API.Core.Handlers;
 using Chatbot.API.Core.Models;
 using Chatbot.API.Repositories.Implementation;
 using Chatbot.API.Repositories.Interface;
@@ -14,7 +15,7 @@ using System.Text;
 
 //try
 //{
-    var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 var credential = new ApiKeyCredential(

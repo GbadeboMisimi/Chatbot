@@ -147,9 +147,9 @@ namespace Chatbot.API.Services.Implementation
                 {
                     WaitUntil = WaitUntilState.NetworkIdle,
                     Timeout = 60000
-                });
+                });    
 
-                await page.WaitForTimeoutAsync(2000);
+                await page.WaitForTimeoutAsync(5000);
 
                 var texts = await page.EvaluateAsync<string[]>(@"
                     () => {

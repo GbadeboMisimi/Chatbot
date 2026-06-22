@@ -3,7 +3,7 @@ using Chatbot.API.Core.Models;
 using Chatbot.API.Repositories.Interface;
 using Chatbot.API.Services.Interface;
 
-namespace Chatbot.API.Services.Implementation
+namespace Chatbot.API.Core.Handlers
 {
     public class ChatHandler : IChatHandler
     {
@@ -149,10 +149,16 @@ namespace Chatbot.API.Services.Implementation
 
                         if (liveResult != null)
                         {
+                            _logger.LogInformation("Website fallback succeeded. URL: {Url}", liveResult.Value.Url);
+                            
+
+                            _logger.LogInformation(
+                               "Content length sent to AI: {Length}",
+                               liveResult.Value.Content?.Length ?? 0);
+
                             reply = await _aiService.GetResponseAsync(
                                 correctedMessage,
                                 liveResult.Value.Content);
-
                             citations.Add(new CitationDto
                             {
                                 Topic = "UBA Website (Live)",
@@ -162,6 +168,10 @@ namespace Chatbot.API.Services.Implementation
                         }
                         else
                         {
+                            _logger.LogWarning(
+                                "Website fallback returned NULL for query: {Query}",
+                                normalizedMessage);
+
                             reply = _aiService.GetFallbackResponse();
                         }
                     }
