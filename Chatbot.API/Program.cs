@@ -62,16 +62,20 @@ builder.Services.AddControllers();
         });
     });
 
-    //builder.Services.AddDbContext<AppDbContext>(options =>
-    //    options.UseSqlServer(
-    //        builder.Configuration.GetConnectionString("DefaultConnection")));
+//builder.Services.AddDbContext<AppDbContext>(options =>
+//    options.UseSqlServer(
+//        builder.Configuration.GetConnectionString("DefaultConnection")));
 
-    builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlOptions => sqlOptions.CommandTimeout(600)));
+//builder.Services.AddDbContext<AppDbContext>(options =>
+//options.UseSqlServer(
+//    builder.Configuration.GetConnectionString("DefaultConnection"),
+//    sqlOptions => sqlOptions.CommandTimeout(600)));
 
-    builder.Services.AddHttpClient();
+builder.Services.AddDbContext<AppDbContext>(options =>
+options.UseNpgsql(
+    builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddHttpClient();
 
     builder.Services.AddScoped<IUserRepository, UserRepository>();
     builder.Services.AddScoped<IChatHistoryRepository, ChatHistoryRepository>();

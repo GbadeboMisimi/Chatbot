@@ -17,8 +17,7 @@ public class AppDbContext : DbContext
         {
             if (!optionsBuilder.IsConfigured)
             {
-                optionsBuilder.UseSqlServer(options =>
-                    options.CommandTimeout(500));
+                optionsBuilder.UseNpgsql();
             }
         }
 
