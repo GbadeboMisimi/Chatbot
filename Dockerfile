@@ -3,7 +3,7 @@ WORKDIR /src
 
 COPY . .
 RUN dotnet restore
-RUN dotnet publish Chatbot.API/Chatbot.API.csproj -c Release -o /app/publish
+RUN dotnet publish Chhatbot.API.csproj -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
@@ -11,3 +11,5 @@ WORKDIR /app
 COPY --from=build /app/publish .
 
 ENTRYPOINT ["dotnet", "Chatbot.API.dll"]
+
+
